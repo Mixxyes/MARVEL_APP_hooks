@@ -1,94 +1,65 @@
-import {Component} from 'react';
+import {useState, useEffect, useRef} from 'react';
 import PropTypes from 'prop-types';
 
 import Spinner from '../spinner/Spinner';
 import ErrorMessage from '../errorMessage/ErrorMessage';
-import MarvelService from '../../services/MarvelService';
+import useMarvelService from '../../services/MarvelService';
 import './charList.scss';
 
-class CharList extends Component {
+const CharList = (props) => {
     
     // offset нужен для пагинации, увеличиваем его на 9 каждый раз
     // charEnded сигнализирует, что персонажи в данных закончились и скрывает кнопку пагинации
-    state = {
-        charList: [],
-        loading: true,
-        error: false,
-        newItemLoading: false,
-        offset: 210,
-        charEnded: false
-    }
+    const [charList, setCharlist] = useState([]);
+    const [newItemLoading, setNewItemLoading] = useState(false);
+    const [offset, setOffset] = useState(210);
+    const [charEnded, setCharEnded] = useState(false);
     
     // создаем экземпляр класса, который общается с сервером, как свойство класса
-    marvelService = new MarvelService();
+    const {loading, error, getAllCharacters} = useMarvelService();
 
     // при создании компонента не передаем отступ, он стоит как дефолт в ф-ии общения с api
-    componentDidMount() {
-        this.onRequest();
-    }
+    
+    useEffect(() => {
+        onRequest(offset, true);
+    }, []);
 
     // метод загружает массив из 9 персонажей
     //offset может передаваться или нет
-    onRequest = (offset) => {
-        this.onCharListLoading();
-        this.marvelService.getAllCharacters(offset)
-            .then(this.onCharListLoaded)
-            .catch(this.onError)
-    }
-
-    // используется в методе .onRequest для уставновки в состояние флага загрузки в true
-    onCharListLoading = () => {
-        this.setState({
-            newItemLoading: true
-        })
+    const onRequest = (offset, initial) => {
+        initial ? setNewItemLoading(false) : setNewItemLoading(true);
+        getAllCharacters(offset)
+            .then(onCharListLoaded);
     }
 
     // после ответа от сервера обновляем состояние
     // в условии проверяем не закончились ли персонажи в данных
     // в массив персонажей в стэйт добавляем персонажей из нового массива персонажей
     // флаги загрузки устанавливаем в false
-    onCharListLoaded = (newCharList) => {
+    const onCharListLoaded = (newCharList) => {
         let ended = false;
         if (newCharList.length < 9) {
             ended = true;
         }
 
-
-        this.setState(({offset, charList}) => ({
-            charList: [...charList, ...newCharList],
-            loading: false,
-            newItemLoading: false,
-            offset: offset + 9,
-            charEnded: ended
-        }))
+        setCharlist(charList => [...charList, ...newCharList]);
+        setNewItemLoading(newItemLoading => false);
+        setOffset(offset => offset + 9);
+        setCharEnded(charEnded => ended);
     }
 
-    // используется в методе onRequest для установки в состояние флага ошибки
-    onError = () => {
-        this.setState({
-            error: true,
-            loading: false
-        })
-    }
+    const itemRefs = useRef([]);
 
-    itemRefs = [];
-
-    setRef = (ref) => {
-        this.itemRefs.push(ref);
-    }
-
-
-
-    focusOnItem = (id) => {
+    const focusOnItem = (id) => {
         
-        this.itemRefs.forEach(item => item.classList.remove('char__item_selected'));
-        this.itemRefs[id].classList.add('char__item_selected');
-        this.itemRefs[id].focus();
+        itemRefs.current.forEach(item => item.classList.remove('char__item_selected'));
+        itemRefs.current[id].classList.add('char__item_selected');
+        itemRefs.current[id].focus();
     }
     
     // Этот метод создан для оптимизации, 
     // чтобы не помещать такую конструкцию в метод render
-    renderItems(arr) {
+    function renderItems(arr) {
         const items =  arr.map((item, i) => {
             // в imgStyle подбираем стиль для картинки-заглушки
             let imgStyle = {'objectFit' : 'cover'};
@@ -104,16 +75,16 @@ class CharList extends Component {
                 <li 
                 className="char__item"
                 tabIndex={0}
-                ref={this.setRef}
+                ref={el => itemRefs.current[i] = el}
                 key={item.id}
                 onClick={() => {
-                    this.focusOnItem(i);
-                    this.props.onCharSelected(item.id);
+                    focusOnItem(i);
+                    props.onCharSelected(item.id);
                 }}
                 onKeyPress={(e) => {
                     if (e.key === ' ' || e.key === "Enter") {
-                        this.props.onCharSelected(item.id);
-                        this.focusOnItem(i);
+                        props.onCharSelected(item.id);
+                        focusOnItem(i);
                     }
                 }}
                 >
@@ -124,48 +95,39 @@ class CharList extends Component {
         });
         // А эта конструкция вынесена для центровки спиннера/ошибки
         return (
-            <ul 
-            className="char__grid"
-            
-            >
+            <ul className="char__grid">
                 {items}
             </ul>
         )
     }
+  
+    // в items помещаем список с элементами списка, который формируется в методе
+    const items = renderItems(charList);
 
-    render() {
+    // в зависимости от стэйта в одну из переменных записываем компонент
+    const errorMessage = error ? <ErrorMessage/> : null;
+    const spinner = loading && !newItemLoading ? <Spinner/> : null;
 
-        const {charList, loading, error, newItemLoading, offset, charEnded} = this.state;
-        
-        // в items помещаем список с элементами списка, который формируется в методе
-        const items = this.renderItems(charList);
+    return (
+        <div className="char__list">
+            {errorMessage}
+            {spinner}
+            {items}
+            <button 
+                className="button button__main button__long"
 
-        // в зависимости от стэйта в одну из переменных записываем компонент
-        const errorMessage = error ? <ErrorMessage/> : null;
-        const spinner = loading ? <Spinner/> : null;
-        const content = !(loading || error) ? items : null;
+                // затемняем кнопку, если идет загрузка
+                disabled={newItemLoading}
 
-        return (
-            <div className="char__list">
-                {errorMessage}
-                {spinner}
-                {content}
-                <button 
-                    className="button button__main button__long"
+                // отключаем показ кнопки, если закончились персонажи
+                style={{'display': charEnded ? 'none' : 'block'}}
 
-                    // затемняем кнопку, если идет загрузка
-                    disabled={newItemLoading}
-
-                    // отключаем показ кнопки, если закончились персонажи
-                    style={{'display': charEnded ? 'none' : 'block'}}
-
-                    // при пагинации вызываем метод .onRequest
-                    onClick={() => this.onRequest(offset)}>
-                    <div className="inner">load more</div>
-                </button>
-            </div>
-        )
-    }
+                // при пагинации вызываем метод .onRequest
+                onClick={() => onRequest(offset)}>
+                <div className="inner">load more</div>
+            </button>
+        </div>
+    )
 }
 
 
